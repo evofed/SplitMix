@@ -8,12 +8,12 @@ def make_if_not_exist(p):
 hostname = os.uname()[1]  # type: str
 # Update your paths here.
 CHECKPOINT_ROOT = './checkpoint'
-if int(hostname.split('-')[-1]) >= 8:
-    data_root = '/localscratch2/jyhong/'
-elif hostname.startswith('illidan'):
-    data_root = '/media/Research/jyhong/data'
-else:
-    data_root = './data'
+# if int(hostname.split('-')[-1]) >= 8:
+#     data_root = './data'
+# elif hostname.startswith('illidan'):
+#     data_root = '/media/Research/jyhong/data'
+# else:
+data_root = './data'
 make_if_not_exist(data_root)
 make_if_not_exist(CHECKPOINT_ROOT)
 
@@ -25,6 +25,7 @@ if hostname.startswith('illidan') and int(hostname.split('-')[-1]) < 8:
         "DomainNet": data_root + "/DomainNet",
         "DomainNetPathList": home_path + "projects/FedBN/data/",  # store the path list file from FedBN
         "Cifar10": data_root,
+        "OpenImage": data_root + "/OpenImage",
     }
 else:
     DATA_PATHS = {
@@ -32,4 +33,5 @@ else:
         "DomainNet": data_root + "/DomainNet",
         "DomainNetPathList": data_root + "/DomainNet/domainnet10/",  # store the path list file from FedBN
         "Cifar10": data_root,
+        "OpenImage": data_root + "/OpenImage",
     }

@@ -17,7 +17,7 @@ from utils.utils import set_seed, AverageMeter, CosineAnnealingLR, \
 from utils.config import CHECKPOINT_ROOT
 
 # NOTE import desired federation
-from federated.core import SplitFederation as Federation, AdversaryCreator
+from federated.core import SplitFederation as Federation
 
 
 def render_run_name(args, exp_folder):
@@ -88,6 +88,15 @@ def get_model_fh(data, model, atom_slim_ratio):
                 from nets.HeteFL.preresnet import resnet18
             ModelClass = lambda **kwargs: EnsembleNet(
                 base_net=resnet18, atom_slim_ratio=atom_slim_ratio,
+                rescale_init=args.rescale_init, rescale_layer=args.rescale_layer, **kwargs)
+        elif model in ['ens_preresnet152']:
+            if args.no_track_stat:
+                # FIXME remove on release
+                from nets.HeteFL.preresne import resnet152
+            else:
+                from nets.HeteFL.preresnet import resnet152
+            ModelClass = lambda **kwargs: EnsembleNet(
+                base_net=resnet152, atom_slim_ratio=atom_slim_ratio,
                 rescale_init=args.rescale_init, rescale_layer=args.rescale_layer, **kwargs)
         else:
             raise ValueError(f"Invalid model: {model}")

@@ -3,9 +3,9 @@ import torch
 import torchvision.transforms as transforms
 from torch.utils.data import Subset
 from torch.utils.data import DataLoader
-
+from collections import defaultdict
 from utils.data_utils import DomainNetDataset, DigitsDataset, Partitioner, \
-    CifarDataset, ClassWisePartitioner, extract_labels
+    CifarDataset, ClassWisePartitioner, extract_labels, OpenImageDataset
 
 
 def compose_transforms(trns, image_norm):
@@ -110,6 +110,37 @@ def get_central_data(name: str, domains: list, percent=1., image_norm='none',
         test_sets = [CifarDataset(domain, train=False,
                                   transform=compose_transforms(trn_test, image_norm))
                      for domain in domains]
+    elif name.lower() == 'openimage':
+        if image_norm == 'default':
+            image_norm = 'torch'
+        for domain in domains:
+            if domain not in OpenImageDataset.all_domains:
+                raise ValueError(f"Invalid domain: {domain}")
+        trn_train = [
+            # transforms.RandomResizedCrop(224),
+            transforms.Resize((256, 256)),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            #transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                 (0.2023, 0.1994, 0.2010)),
+        ]
+        trn_test = [
+            transforms.Resize((256, 256)),
+            # transforms.RandomResizedCrop((128,128)),
+            # transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            #transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            transforms.Normalize((0.4914, 0.4822, 0.4465),
+                                 (0.2023, 0.1994, 0.2010)),
+        ]
+
+        train_sets = [OpenImageDataset(domain, train=True,
+                                   transform=compose_transforms(trn_train, image_norm))
+                      for domain in domains]
+        test_sets = [OpenImageDataset(domain, train=False,
+                                  transform=compose_transforms(trn_test, image_norm))
+                     for domain in domains]
     else:
         raise NotImplementedError(f"name: {name}")
     return train_sets, test_sets
@@ -200,6 +231,21 @@ def make_fed_data(train_sets, test_sets, batch_size, domains, shuffle_eval=False
                 for idxs in _idx_by_user:
                     np.random.shuffle(idxs)
                     sub_test_sets.append(Subset(te_set, idxs))
+        elif 'openimage' in domains[0]:  # split by openimage realilstic
+            assert len(train_sets) == 1, "Only support one domain for openimage"
+            assert len(test_sets) == 1, "Only support one domain for openimage"
+            assert isinstance(train_sets[0], OpenImageDataset)
+            imgs = train_sets[0].imgs
+            train_data_split, id_map = split_openimage(imgs)
+            imgs = test_sets[0].imgs
+            test_data_split, _ = split_openimage(imgs, id_map)
+            sub_train_sets, sub_test_sets = [], []
+            splitted_clients = []
+            print(f" {dname} | train split: {train_data_split}")
+            for i_user in range(n_user_per_domain):
+                sub_train_sets.append(Subset(train_sets[0], train_data_split[i_user]))
+                sub_test_sets.append(Subset(test_sets[0], test_data_split[i_user]))
+                splitted_clients.append(f"{dname}-{i_user}")
         else:  # class iid
             split = Partitioner(rng=np.random.RandomState(partition_seed),
                                 min_n_sample_per_share=min_n_sample_per_share,
@@ -277,6 +323,22 @@ def make_fed_data(train_sets, test_sets, batch_size, domains, shuffle_eval=False
 
     return train_loaders, val_loaders, test_loaders, clients
 
+def split_openimage(imgs, id_map=None):
+    data_split = defaultdict(list)
+    real_id = 0
+    if id_map is None:
+        id_map = {}
+    for idx, img_info in enumerate(imgs):
+        client_id = img_info[0]
+        if client_id not in id_map:
+            id_map[client_id] = real_id
+            Id = real_id
+            real_id += 1
+        else:
+            Id = id_map[client_id]
+        data_split[Id].append(idx)
+    return data_split, id_map
+
 def prepare_domainnet_data(args, domains=['clipart', 'quickdraw'], shuffle_eval=False,
                            n_class_per_user=-1, n_user_per_domain=1,
                            partition_seed=42, partition_mode='uni',
@@ -345,6 +407,28 @@ def prepare_cifar_data(args, domains=['cifar10'], shuffle_eval=False, n_class_pe
     )
     return train_loaders, val_loaders, test_loaders, clients
 
+def prepare_openimage_data(args, domains=['openimage'], shuffle_eval=False, n_class_per_user=-1, 
+                           n_user_per_domain=1, partition_seed=42, partition_mode='uni', val_ratio=0,
+                           eq_domain_train_size=True, subset_with_logits=False,
+                           consistent_test_class=False,
+                           ):
+    
+    train_sets, test_sets = get_central_data('openimage', domains)
+    n_user_per_domain = 16708
+    n_class_per_user = -1
+    val_ratio = 0
+    train_loaders, val_loaders, test_loaders, clients = make_fed_data(
+        train_sets, test_sets, args.batch, domains, shuffle_eval=shuffle_eval,
+        partition_seed=partition_seed, n_user_per_domain=n_user_per_domain,
+        partition_mode=partition_mode,
+        val_ratio=val_ratio, eq_domain_train_size=eq_domain_train_size, percent=args.percent,
+        min_n_sample_per_share=64 if n_class_per_user > 3 else 16, subset_with_logits=subset_with_logits,
+        n_class_per_user=n_class_per_user,
+        test_batch_size=args.test_batch if hasattr(args, 'test_batch') else args.batch,
+        consistent_test_class=consistent_test_class,
+    )
+    return train_loaders, val_loaders, test_loaders, clients
+    
 
 class SubsetWithLogits(Subset):
     r"""

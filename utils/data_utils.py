@@ -7,10 +7,11 @@ from collections import defaultdict
 import os
 from tqdm import tqdm
 from torchvision.datasets.folder import IMG_EXTENSIONS, has_file_allowed_extension
-
+import csv
 from typing import Tuple, List, Dict, Optional, Callable, cast
 from .config import DATA_PATHS
 from .utils import shuffle_sampler
+import torch
 
 
 class DigitsDataset(Dataset):
@@ -92,6 +93,40 @@ class CifarDataset(CIFAR10):
         data_path = os.path.join(DATA_PATHS["Cifar10"], domain)
         super().__init__(data_path, train=train, transform=transform, download=download)
 
+
+class OpenImageDataset(Dataset):
+    all_domains = ['openimage']
+    num_classes = 596
+
+    def __init__(self, domain='openimage', train=True, transform=None) -> None:
+        assert domain in self.all_domains, f"Invalid domain: {domain}"
+        if train:
+            self.root =  os.path.join(data_path, 'train')
+            data_path = os.path.join(data_path, 'client_data_mapping/train.csv')
+        else:
+            self.root = os.path.join(data_path, 'test')
+            data_path = os.path.join(data_path, 'client_data_mapping/test.csv')
+        self.transform = transform
+        self.train = train
+
+        self.imgs = []
+        self.targets = []
+        with open(data_path) as f:
+            reader = csv.reader(f)
+            for row in reader:
+                self.imgs.append(row[:-1])
+                self.targets.append(int(row[-1]))
+    
+    def __len__(self) -> int:
+        return len(self.imgs)
+    
+    def __getitem__(self, index: int) -> Tuple[Image.Image, int]:
+        path = os.path.join(self.root, self.imgs[index][1])
+        target = torch.tensor([self.targets[index]])
+        img = Image.open(path)
+        if self.transform is not None:
+            img = self.transform(img)
+        return img, target
 
 class DomainNetDataset(Dataset):
     all_domains = ['clipart', 'infograph', 'painting', 'quickdraw', 'real', 'sketch']
